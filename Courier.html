@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quick Courier Map</title>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
+  <style>
+    body, html { margin: 0; padding: 0; }
+    #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+    #controls, #info, #courierDetails {
+      position: absolute;
+      background-color: white;
+      padding: 10px;
+      z-index: 1;
+    }
+    #controls { top: 10px; left: 10px; }
+    #info { top: 100px; left: 10px; max-width: 300px; }
+    #courierDetails { top: 300px; left: 10px; max-width: 300px; }
+    #adminPanel {
+      display: none;
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background-color: white;
+      padding: 20px;
+      z-index: 2;
+      border: 1px solid #ccc;
+      max-height: 80%;
+      overflow-y: auto;
+    }
+    #adminPanel button {
+      background-color: red;
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<div id="controls">
+  <label for="sourceCity">Source City:</label>
+  <select id="sourceCity"></select>
+  
+  <label for="destinationCity">Destination City:</label>
+  <select id="destinationCity"></select>
+  
+  <label for="vehicleType">Vehicle Type:</label>
+  <select id="vehicleType">
+    <option value="van">Van</option>
+    <option value="truck">Truck</option>
+    <option value="bus">Bus</option>
+  </select>
+  
+  <label for="parcelWeight">Parcel Weight (kg):</label>
+  <input type="number" id="parcelWeight" min="0" step="0.5" placeholder="e.g., 4" />
+  
+  <label for="receiverName">Receiver Name:</label>
+  <input type="text" id="receiverName" placeholder="Enter receiver's name" />
+  <button onclick="getRoute()">Get Routes</button>
+  <button onclick="adminLogin()">Admin Login</button>
+  
+</div>
+
+<!-- Admin Panel - initially hidden -->
+<div id="adminPanel">
+  <button onclick="closeAdminPanel()">Close Admin Panel</button>
+  <h3>Admin Panel</h3>
+  <div id="courierList">
+    <!-- List of couriers will be populated here -->
+  </div>
+</div>
+
+<div id="info">
+  <strong>Travel Information:</strong>
+  <div id="routesInfo"></div>
+</div>
+
+<div id="courierDetails">
+  <strong>Courier Status:</strong>
+  <div id="statusInfo">Waiting for route...</div>
+</div>
+
+<div id="map"></div>
+
+<script>
+    mapboxgl.accessToken = 'pk.eyJ1IjoiaGVtYW5hbmRhbiIsImEiOiJjbTFzeWY2ZmswMDRlMmtzNm15b3p4czNoIn0.IvEDwgHVqsWtefEju8VMdA';
+  
+    const map = new mapboxgl.Map({
+      container: 'map',
+      style: 'mapbox://styles/mapbox/streets-v11',
+      center: [78.9629, 23.9937],
+      zoom: 4
+    });
+
+    const cities = [
+  { city: 'Ahmedabad', lat: 23.0225, lon: 72.5714 },
+  { city: 'Bengaluru', lat: 12.9716, lon: 77.5946 },
+  { city: 'Chandigarh', lat: 30.7333, lon: 76.7794 },
+  { city: 'Chennai', lat: 13.0827, lon: 80.2707 },
+  { city: 'Delhi', lat: 28.6139, lon: 77.2090 },
+  { city: 'Hyderabad', lat: 17.3850, lon: 78.4867 },
+  { city: 'Indore', lat: 22.7196, lon: 75.8577 },
+  { city: 'Jaipur', lat: 26.9124, lon: 75.7873 },
+  { city: 'Kolkata', lat: 22.5726, lon: 88.3639 },
+  { city: 'Lucknow', lat: 26.8467, lon: 80.9462 },
+  { city: 'Mumbai', lat: 19.0760, lon: 72.8777 },
+  { city: 'Nagpur', lat: 21.1458, lon: 79.0882 },
+  { city: 'Pune', lat: 18.5204, lon: 73.8567 },
+  { city: 'Surat', lat: 21.1702, lon: 72.8311 },
+  { city: 'Vadodara', lat: 22.3075, lon: 73.1812 },
+  { city: 'Varanasi', lat: 25.3176, lon: 82.9739 },
+  { city: 'Visakhapatnam', lat: 17.6869, lon: 83.2185 },
+  { city: 'Noida', lat: 28.5355, lon: 77.3910 },
+  { city: 'Coimbatore', lat: 11.0168, lon: 76.9558 },
+  { city: 'Madurai', lat: 9.9252, lon: 78.1198 },
+  { city: 'Mysore', lat: 12.2958, lon: 76.6394 },
+  { city: 'Thiruvananthapuram', lat: 8.5241, lon: 76.9366 },
+  { city: 'Kochi', lat: 9.9312, lon: 76.2673 },
+  { city: 'Vijayawada', lat: 16.5062, lon: 80.6480 },
+  { city: 'Guwahati', lat: 26.1445, lon: 91.7362 },
+  { city: 'Patna', lat: 25.5941, lon: 85.1376 },
+  { city: 'Ranchi', lat: 23.3441, lon: 85.3096 },
+  { city: 'Bhopal', lat: 23.2599, lon: 77.4126 },
+  { city: 'Raipur', lat: 21.2514, lon: 81.6296 }
+];
+
+
+    cities.sort((a, b) => a.city.localeCompare(b.city));
+  
+    const sourceCitySelect = document.getElementById('sourceCity');
+    const destinationCitySelect = document.getElementById('destinationCity');
+    const vehicleTypeSelect = document.getElementById('vehicleType');
+    const parcelWeightInput = document.getElementById('parcelWeight');
+  
+    cities.forEach(city => {
+      const optionSource = document.createElement('option');
+      optionSource.value = JSON.stringify(city);
+      optionSource.textContent = city.city;
+      sourceCitySelect.appendChild(optionSource);
+  
+      const optionDestination = document.createElement('option');
+      optionDestination.value = JSON.stringify(city);
+      optionDestination.textContent = city.city;
+      destinationCitySelect.appendChild(optionDestination);
+    });
+  
+    let couriers = []; // List of all courier details
+  
+    function adminLogin() {
+      const password = prompt("Enter Admin Password:");
+      if (password === "********") {
+        alert("Admin logged in successfully!");
+        showAdminPanel();
+      } else {
+        alert("Incorrect password! Please try again.");
+      }
+    }
+  
+    function showAdminPanel() {
+      document.getElementById('adminPanel').style.display = 'block';
+      const courierListDiv = document.getElementById('courierList');
+      courierListDiv.innerHTML = couriers.length
+        ? couriers.map((courier, index) => `
+            <div>
+              <h4>Courier ${index + 1}</h4>
+              <p><strong>Source:</strong> ${courier.sourceCity.city}</p>
+              <p><strong>Destination:</strong> ${courier.destinationCity.city}</p>
+              <p><strong>Receiver:</strong> ${courier.receiverName}</p>
+              <p><strong>Weight:</strong> ${courier.weight} kg</p>
+              <p><strong>Estimated Cost:</strong> ₹${courier.routeInfo.costEstimate}</p>
+            </div>
+          `).join('')
+        : '<p>No couriers yet.</p>';
+    }
+  
+    function closeAdminPanel() {
+      document.getElementById('adminPanel').style.display = 'none';
+    }
+  
+    async function getRoute() {
+      const sourceCity = JSON.parse(sourceCitySelect.value);
+      const destinationCity = JSON.parse(destinationCitySelect.value);
+      const vehicleType = vehicleTypeSelect.value;
+      const parcelWeight = parseFloat(parcelWeightInput.value);
+      const receiverName = document.getElementById('receiverName').value.trim();
+  
+      if (!parcelWeight || parcelWeight <= 0) {
+        alert("Please enter a valid parcel weight to proceed.");
+        return;
+      }
+  
+      if (receiverName === "") {
+        alert("Please enter the receiver's name to proceed.");
+        return;
+      }
+  
+      const sourceCoordinates = [sourceCity.lon, sourceCity.lat];
+      const destinationCoordinates = [destinationCity.lon, destinationCity.lat];
+      const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${sourceCoordinates[0]},${sourceCoordinates[1]};${destinationCoordinates[0]},${destinationCoordinates[1]}?geometries=geojson&alternatives=true&access_token=${mapboxgl.accessToken}`;
+  
+      const response = await fetch(url);
+      const data = await response.json();
+  
+      clearExistingRoutes();
+  
+      const routesInfoDiv = document.getElementById('routesInfo');
+      routesInfoDiv.innerHTML = '';
+      const sortedRoutes = data.routes.sort((a, b) => a.duration - b.duration);
+  
+      document.getElementById('statusInfo').innerHTML = '';
+  
+      sortedRoutes.slice(0, 3).forEach((route, index) => {
+        displayRoute(route, index);
+  
+        const distanceInKm = (route.distance / 1000).toFixed(2);
+        const durationInHours = adjustForVehicle(route.duration / 3600, vehicleType);
+        const costEstimate = calculateCost(distanceInKm, parcelWeight, vehicleType);
+  
+        routesInfoDiv.innerHTML += `Route ${index + 1}: ${distanceInKm} km, ${durationInHours} hours, Cost Estimate: ₹${costEstimate}<br>`;
+        
+        const statusDiv = document.createElement('div');
+        statusDiv.id = `statusRoute${index}`;
+        statusDiv.innerHTML = `<strong>Route ${index + 1} Status:</strong> Estimated Arrival in ${durationInHours} hours`;
+        document.getElementById('statusInfo').appendChild(statusDiv);
+  
+        simulateCourierMovement(route, index, sourceCity, destinationCity, receiverName, parcelWeight, distanceInKm, durationInHours, costEstimate);
+      });
+    }
+  
+    function clearExistingRoutes() {
+      const layers = map.getStyle().layers;
+      layers.forEach(layer => {
+        if (layer.id.startsWith('route-')) {
+          map.removeLayer(layer.id);
+        }
+      });
+  
+      const sources = Object.keys(map.getStyle().sources);
+      sources.forEach(source => {
+        if (source.startsWith('route-')) {
+          map.removeSource(source);
+        }
+      });
+    }
+  
+    function displayRoute(route, index) {
+      const routeID = `route-${index}`;
+      const colors = ['#3887be', '#fbb03b', '#223b53'];
+  
+      map.addSource(routeID, {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          properties: {},
+          geometry: {
+            type: 'LineString',
+            coordinates: route.geometry.coordinates
+          }
+        }
+      });
+  
+      map.addLayer({
+        id: routeID,
+        type: 'line',
+        source: routeID,
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round'
+        },
+        paint: {
+          'line-color': colors[index] || '#888888',
+          'line-width': index === 0 ? 5 : 3
+        }
+      });
+  
+      const bounds = new mapboxgl.LngLatBounds();
+      route.geometry.coordinates.forEach(coord => bounds.extend(coord));
+      map.fitBounds(bounds, { padding: 50 });
+    }
+  
+    function calculateCost(distance, weight, vehicleType) {
+      const baseRates = { van: 60, truck: 40, bus: 20 };
+      const perKmRate = 0.8;
+      const weightRateFactor = 0.8;
+  
+      return (baseRates[vehicleType] + distance * perKmRate + weight * 10 * weightRateFactor).toFixed(2);
+    }
+  
+    function adjustForVehicle(duration, vehicleType) {
+      const vehicleModifiers = {
+        van: 0.9,
+        truck: 1.1,
+        bus: 1.3
+      };
+      return (duration * vehicleModifiers[vehicleType]).toFixed(2);
+    }
+    function simulateCourierMovement(route, routeIndex, sourceCity, destinationCity, receiverName, weight, distance, duration, costEstimate) {
+  const routeCoordinates = route.geometry.coordinates;
+  let i = 0;
+  const marker = new mapboxgl.Marker({ color: routeIndex === 0 ? 'green' : 'red' }).setLngLat(routeCoordinates[0]).addTo(map);
+
+  const totalTimeInSeconds = route.duration / 3600;
+  const intervalDelay = (totalTimeInSeconds * 1000) / routeCoordinates.length;
+
+  const interval = setInterval(() => {
+    if (i < routeCoordinates.length) {
+      marker.setLngLat(routeCoordinates[i]);
+      i++;
+    } else {
+      clearInterval(interval);
+      document.getElementById(`statusRoute${routeIndex}`).textContent = `Route ${routeIndex + 1} Status: Courier has arrived at the destination`;
+
+      // Create a "Select Route" button for this route
+      const selectButton = document.createElement('button');
+      selectButton.textContent = `Select Route ${routeIndex + 1}`;
+      
+      // Add an onclick event to save the route and hide both buttons
+      selectButton.onclick = () => {
+        couriers.push({
+          sourceCity,
+          destinationCity,
+          receiverName,
+          weight,
+          routeInfo: {
+            distance,
+            duration,
+            costEstimate
+          }
+        });
+        alert(`Route ${routeIndex + 1} has been selected and saved.`);
+
+        // Remove all "Select Route" buttons after one is clicked
+        document.querySelectorAll("button").forEach(button => {
+          if (button.textContent.startsWith("Select Route")) {
+            button.remove();
+          }
+        });
+      };
+      
+      document.getElementById(`statusRoute${routeIndex}`).appendChild(selectButton);
+
+      // Optionally remove the marker after reaching the destination
+      setTimeout(() => marker.remove(), 3000);
+    }
+  }, intervalDelay);
+}
+
+</script>
+  </body>
+  </html>
+  
